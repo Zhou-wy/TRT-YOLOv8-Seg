@@ -1,0 +1,5 @@
+workspace/images/*
+workspace/log/*
+workspace/model/*
+build/*
+bin/*
