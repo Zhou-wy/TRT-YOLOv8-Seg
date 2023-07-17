@@ -4,17 +4,17 @@
  * @Author: zwy
  * @Date: 2023-07-11 19:01:45
  * @LastEditors: zwy
- * @LastEditTime: 2023-07-12 19:12:31
+ * @LastEditTime: 2023-07-16 16:01:06
  */
 
 #include <vector>
 #include <opencv2/opencv.hpp>
 
 
-static const char *echargerlabels[] = {"ChargeCable_1", "ChargeCable_2"};
+static const char *echargerlabels[] = {"Cable-1", "Cable-2"};
 std::vector<cv::Scalar> echargercolors = {
-    {0, 0, 255}, // Red
-    {255, 0, 0}, // Bule
+    {160, 82, 45}, // Sienna
+    {220, 20, 60}, // Crimson
 };
 
 static const char *cocolabels[] = {

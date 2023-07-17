@@ -12,6 +12,7 @@
  */
 
 #include "cuda_tools.cuh"
+#include <opencv2/opencv.hpp>
 
 namespace CUDATools
 {
@@ -112,3 +113,5 @@ namespace CUDATools
         checkCudaRuntime(cudaSetDevice(old_));
     }
 }
+
+

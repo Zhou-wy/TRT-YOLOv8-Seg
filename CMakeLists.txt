@@ -59,7 +59,7 @@ link_directories(${CUDA_LIB_DIR} ${TRT_LIB_DIR})
 
 add_executable(${PROJECT_NAME} ${CMAKE_SOURCE_DIR}/main.cpp)
 # 链接动态链接库
-target_link_libraries(${PROJECT_NAME}  ${LD_TRT_LIBS} ${LD_CUDA_LIBS} ${OpenCV_LIBS} ${EXTRA_LIBS})
+target_link_libraries(${PROJECT_NAME}  ${LD_TRT_LIBS} ${LD_CUDA_LIBS} ${OpenCV_LIBS} ${EXTRA_LIBS} SqlWarpper)
 
 add_executable(test_yolov8_seg ${CMAKE_SOURCE_DIR}/example/test_yolov8_seg.cpp)
 # 链接动态链接库
@@ -72,3 +72,8 @@ target_link_libraries(test_http_server  ${LD_TRT_LIBS} ${LD_CUDA_LIBS} ${OpenCV_
 add_executable(test_video_pusher ${CMAKE_SOURCE_DIR}/example/test_video_pusher.cpp)
 # 链接动态链接库
 target_link_libraries(test_video_pusher  ${LD_TRT_LIBS} ${LD_CUDA_LIBS} ${OpenCV_LIBS} ${EXTRA_LIBS} ${FFMEPG_LIB})
+
+
+add_executable(test_mysql ${CMAKE_SOURCE_DIR}/example/test_mysql.cpp)
+# 链接动态链接库
+target_link_libraries(test_mysql SqlWarpper)

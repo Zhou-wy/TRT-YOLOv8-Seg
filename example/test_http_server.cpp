@@ -12,25 +12,20 @@
 #include "../src/TrtLib/builder/trt_builder.hpp"
 #include "color_lable.hpp"
 
-class YOLOv8SegInstance
-{
+class YOLOv8SegInstance {
 private:
     std::string m_engine_file;
     std::string m_onnx_file;
     std::shared_ptr<YOLOv8Seg::SegInfer> SegIns;
 
-    std::shared_ptr<YOLOv8Seg::SegInfer> get_infer(YOLOv8Seg::Task task)
-    {
-        if (!iLogger::exists(m_engine_file))
-        {
+    std::shared_ptr<YOLOv8Seg::SegInfer> get_infer(YOLOv8Seg::Task task) {
+        if (!iLogger::exists(m_engine_file)) {
             TRT::compile(
-                TRT::Mode::FP32,
-                10,
-                m_onnx_file,
-                m_engine_file);
-        }
-        else
-        {
+                    TRT::Mode::FP32,
+                    10,
+                    m_onnx_file,
+                    m_engine_file);
+        } else {
             INFOW("%s has been created!", m_engine_file.c_str());
         }
         return YOLOv8Seg::create_seg_infer(m_engine_file, task, 0);
@@ -38,25 +33,22 @@ private:
 
 public:
     YOLOv8SegInstance(const std::string &onnx_file, const std::string &engine_file);
-    ~YOLOv8SegInstance(){};
 
-    bool startup()
-    {
+    ~YOLOv8SegInstance() = default;;
+
+    bool startup() {
         SegIns = get_infer(YOLOv8Seg::Task::seg);
         return SegIns != nullptr;
     }
 
-    bool inference(const cv::Mat &image_input, YOLOv8Seg::BoxSeg &boxarray)
-    {
+    bool inference(const cv::Mat &image_input, YOLOv8Seg::BoxSeg &boxarray) {
 
-        if (SegIns == nullptr)
-        {
+        if (SegIns == nullptr) {
             INFOE("Not Initialize.");
             return false;
         }
 
-        if (image_input.empty())
-        {
+        if (image_input.empty()) {
             INFOE("Image is empty.");
             return false;
         }
@@ -65,21 +57,34 @@ public:
     }
 };
 
-YOLOv8SegInstance::YOLOv8SegInstance(const std::string &onnx_file, const std::string &engine_file) : m_onnx_file(onnx_file), m_engine_file(engine_file)
-{
+YOLOv8SegInstance::YOLOv8SegInstance(const std::string &onnx_file, const std::string &engine_file) : m_onnx_file(
+        onnx_file), m_engine_file(engine_file) {
     std::cout << "                       " << std::endl;
-    std::cout << "               ____        __  __      ____       ____                __    __  _____       __         _____        " << std::endl;
-    std::cout << "              /\\  _`\\     /\\ \\/\\ \\    /\\  _`\\    /\\  _`\\             /\\ \\  /\\ \\/\\  __`\\    /\\ \\       /\\  __`\\      " << std::endl;
-    std::cout << "              \\ \\,\\L\\_\\   \\ \\ \\ \\ \\   \\ \\ \\L\\_\\  \\ \\ \\L\\ \\           \\ `\\`\\\\/'/\\ \\ \\/\\ \\   \\ \\ \\      \\ \\ \\/\\ \\     " << std::endl;
-    std::cout << "               \\/_\\__ \\    \\ \\ \\ \\ \\   \\ \\  _\\L   \\ \\ ,__/            `\\ `\\ /'  \\ \\ \\ \\ \\   \\ \\ \\  __  \\ \\ \\ \\ \\    " << std::endl;
-    std::cout << "                 /\\ \\L\\ \\   \\ \\ \\_\\ \\   \\ \\ \\L\\ \\  \\ \\ \\/               `\\ \\ \\   \\ \\ \\_\\ \\   \\ \\ \\L\\ \\  \\ \\ \\_\\ \\   " << std::endl;
-    std::cout << "                 \\ `\\____\\   \\ \\_____\\   \\ \\____/   \\ \\_\\                 \\ \\_\\   \\ \\_____\\   \\ \\____/   \\ \\_____\\  " << std::endl;
-    std::cout << "                  \\/_____/    \\/_____/    \\/___/     \\/_/                  \\/_/    \\/_____/    \\/___/     \\/_____/  " << std::endl;
+    std::cout
+            << "               ____        __  __      ____       ____                __    __  _____       __         _____        "
+            << std::endl;
+    std::cout
+            << "              /\\  _`\\     /\\ \\/\\ \\    /\\  _`\\    /\\  _`\\             /\\ \\  /\\ \\/\\  __`\\    /\\ \\       /\\  __`\\      "
+            << std::endl;
+    std::cout
+            << "              \\ \\,\\L\\_\\   \\ \\ \\ \\ \\   \\ \\ \\L\\_\\  \\ \\ \\L\\ \\           \\ `\\`\\\\/'/\\ \\ \\/\\ \\   \\ \\ \\      \\ \\ \\/\\ \\     "
+            << std::endl;
+    std::cout
+            << "               \\/_\\__ \\    \\ \\ \\ \\ \\   \\ \\  _\\L   \\ \\ ,__/            `\\ `\\ /'  \\ \\ \\ \\ \\   \\ \\ \\  __  \\ \\ \\ \\ \\    "
+            << std::endl;
+    std::cout
+            << "                 /\\ \\L\\ \\   \\ \\ \\_\\ \\   \\ \\ \\L\\ \\  \\ \\ \\/               `\\ \\ \\   \\ \\ \\_\\ \\   \\ \\ \\L\\ \\  \\ \\ \\_\\ \\   "
+            << std::endl;
+    std::cout
+            << "                 \\ `\\____\\   \\ \\_____\\   \\ \\____/   \\ \\_\\                 \\ \\_\\   \\ \\_____\\   \\ \\____/   \\ \\_____\\  "
+            << std::endl;
+    std::cout
+            << "                  \\/_____/    \\/_____/    \\/___/     \\/_/                  \\/_/    \\/_____/    \\/___/     \\/_____/  "
+            << std::endl;
     std::cout << "                       " << std::endl;
 }
 
-class LogicalController : public Controller
-{
+class LogicalController : public Controller {
     SetupController(LogicalController);
 
 public:
@@ -87,14 +92,14 @@ public:
 
 public:
     DefRequestMapping(HelloHttpServer);
+
     DefRequestMapping(SegmentTest);
 
 private:
     std::shared_ptr<YOLOv8SegInstance> Seg_Instance_;
 };
 
-Json::Value LogicalController::HelloHttpServer(const Json::Value &param)
-{
+Json::Value LogicalController::HelloHttpServer(const Json::Value &param) {
 
     Json::Value data;
     data["alpha"] = 199897;
@@ -103,8 +108,7 @@ Json::Value LogicalController::HelloHttpServer(const Json::Value &param)
     return success(data);
 }
 
-Json::Value LogicalController::SegmentTest(const Json::Value &param)
-{
+Json::Value LogicalController::SegmentTest(const Json::Value &param) {
     cv::Mat image = cv::imread("../workspace/images/echarger.jpg");
     YOLOv8Seg::BoxSeg boxarray;
 
@@ -112,8 +116,7 @@ Json::Value LogicalController::SegmentTest(const Json::Value &param)
         return failure("Server error1");
 
     Json::Value boxarray_json(Json::arrayValue);
-    for (auto &box : boxarray)
-    {
+    for (auto &box: boxarray) {
         Json::Value item(Json::objectValue);
         item["left"] = box.left;
         item["top"] = box.top;
@@ -127,25 +130,21 @@ Json::Value LogicalController::SegmentTest(const Json::Value &param)
     return success(boxarray_json);
 }
 
-bool LogicalController::startup()
-{
+bool LogicalController::startup() {
     std::string onnx = "../workspace/model/echarger-v8x.transd.onnx";
     std::string engine = "../workspace/model/echarger-v8x.transd.engine";
     Seg_Instance_ = std::make_shared<YOLOv8SegInstance>(onnx, engine);
-    if (!Seg_Instance_->startup())
-    {
+    if (!Seg_Instance_->startup()) {
         Seg_Instance_.reset();
     }
     return Seg_Instance_ != nullptr;
 }
 
-int test_http(int port = 8090)
-{
+int test_http(int port = 8090) {
 
     INFO("Create controller");
     auto logical_controller = std::make_shared<LogicalController>();
-    if (!logical_controller->startup())
-    {
+    if (!logical_controller->startup()) {
         INFOE("Startup controller failed.");
         return -1;
     }
@@ -165,16 +164,15 @@ int test_http(int port = 8090)
     INFO("Access url: http://%s", address.c_str());
 
     INFO(
-        "访问如下地址即可看到效果:\n"
-        "1. http://%s/api/HelloHttpServer             测试http server 是否正常启动\n"
-        "2. http://%s/api/SegmentTest                 测试预测图片结果是否正常\n",
-        address.c_str(), address.c_str());
+            "访问如下地址即可看到效果:\n"
+            "1. http://%s/api/HelloHttpServer             测试http server 是否正常启动\n"
+            "2. http://%s/api/SegmentTest                 测试预测图片结果是否正常\n",
+            address.c_str(), address.c_str());
 
     INFO("按下Ctrl + C结束程序");
     return iLogger::while_loop();
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     return test_http();
 }
