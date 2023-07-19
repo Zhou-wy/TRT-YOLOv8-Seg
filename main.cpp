@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-11 17:47:19
  * @LastEditors: zwy
- * @LastEditTime: 2023-07-13 16:26:23
+ * @LastEditTime: 2023-07-18 16:43:34
  */
 
 #include "src/HttpServer/http_server.hpp"
@@ -30,15 +30,15 @@ extern "C"
 
 // 用于同步的互斥锁和条件变量
 std::mutex mtx;
-std::condition_variable cv_producer, cv_consumer;
+std::condition_variable cv_producer, cv_consumer, cv_read;
 // 图像队列
 std::queue<cv::Mat> img_queue;
 
 
 static const char *echargerlabels[] = {"Cable_1", "Cable_2"};
 std::vector<cv::Scalar> echargercolors = {
-        {0,   0, 255}, // Red
-        {255, 0, 0}, // Bule
+        {0,   255, 0},     // Green
+        {255, 0,   0},     // Bule
 };
 
 class YOLOv8SegInstance {
@@ -57,7 +57,7 @@ private:
         } else {
             INFOW("%s has been created!", m_engine_file.c_str());
         }
-        return YOLOv8Seg::create_seg_infer(m_engine_file, task, 0);
+        return YOLOv8Seg::create_seg_infer(m_engine_file, task, 0, 0.65, 0.55);
     }
 
 public:
@@ -90,25 +90,25 @@ YOLOv8SegInstance::YOLOv8SegInstance(const std::string &onnx_file, const std::st
         onnx_file), m_engine_file(engine_file) {
     std::cout << "                       " << std::endl;
     std::cout
-            << "               ____        __  __      ____       ____                __    __  _____       __         _____        "
+            << R"(               ____        __  __      ____       ____                __    __  _____       __         _____        )"
             << std::endl;
     std::cout
-            << "              /\\  _`\\     /\\ \\/\\ \\    /\\  _`\\    /\\  _`\\             /\\ \\  /\\ \\/\\  __`\\    /\\ \\       /\\  __`\\      "
+            << R"(              /\  _`\     /\ \/\ \    /\  _`\    /\  _`\             /\ \  /\ \/\  __`\    /\ \       /\  __`\      )"
             << std::endl;
     std::cout
-            << "              \\ \\,\\L\\_\\   \\ \\ \\ \\ \\   \\ \\ \\L\\_\\  \\ \\ \\L\\ \\           \\ `\\`\\\\/'/\\ \\ \\/\\ \\   \\ \\ \\      \\ \\ \\/\\ \\     "
+            << R"(              \ \,\L\_\   \ \ \ \ \   \ \ \L\_\  \ \ \L\ \           \ `\`\\/'/\ \ \/\ \   \ \ \      \ \ \/\ \     )"
             << std::endl;
     std::cout
-            << "               \\/_\\__ \\    \\ \\ \\ \\ \\   \\ \\  _\\L   \\ \\ ,__/            `\\ `\\ /'  \\ \\ \\ \\ \\   \\ \\ \\  __  \\ \\ \\ \\ \\    "
+            << R"(               \/_\__ \    \ \ \ \ \   \ \  _\L   \ \ ,__/            `\ `\ /'  \ \ \ \ \   \ \ \  __  \ \ \ \ \    )"
             << std::endl;
     std::cout
-            << "                 /\\ \\L\\ \\   \\ \\ \\_\\ \\   \\ \\ \\L\\ \\  \\ \\ \\/               `\\ \\ \\   \\ \\ \\_\\ \\   \\ \\ \\L\\ \\  \\ \\ \\_\\ \\   "
+            << R"(                 /\ \L\ \   \ \ \_\ \   \ \ \L\ \  \ \ \/               `\ \ \   \ \ \_\ \   \ \ \L\ \  \ \ \_\ \   )"
             << std::endl;
     std::cout
-            << "                 \\ `\\____\\   \\ \\_____\\   \\ \\____/   \\ \\_\\                 \\ \\_\\   \\ \\_____\\   \\ \\____/   \\ \\_____\\  "
+            << R"(                 \ `\____\   \ \_____\   \ \____/   \ \_\                 \ \_\   \ \_____\   \ \____/   \ \_____\  )"
             << std::endl;
     std::cout
-            << "                  \\/_____/    \\/_____/    \\/___/     \\/_/                  \\/_/    \\/_____/    \\/___/     \\/_____/  "
+            << R"(                  \/_____/    \/_____/    \/___/     \/_/                  \/_/    \/_____/    \/___/     \/_____/  )"
             << std::endl;
     std::cout << "                       " << std::endl;
 }
@@ -223,23 +223,21 @@ int test_http(int port = 8090) {
 
 // 获取当前时间点
 auto lastSaveTime = std::chrono::system_clock::now();
-int64 save_conut = 0;
 
-void show_result(cv::Mat &image, const YOLOv8Seg::BoxSeg &boxarray) {
-    /**
-     * @brief :黄色框区域 ->  安全区域
-     */
+void show_result(cv::Mat &image, const YOLOv8Seg::BoxSeg &boxarray, int width, int height) {
+
+    //黄色框区域 ->  安全区域
     cv::Mat canvas = cv::Mat::zeros(image.size(), image.type());
     std::vector<cv::Point2i> yellowFrame{{int(0.5334 * image.cols), int(0.4353 * image.rows)},
                                          {int(0.5757 * image.cols), int(0.6034 * image.rows)},
                                          {int(0.7050 * image.cols), int(0.6049 * image.rows)},
                                          {int(0.6402 * image.cols), int(0.4384 * image.rows)}};
 
+    std::vector<std::vector<cv::Point>> yellowFrameContours{{yellowFrame.begin(), yellowFrame.end()}};
+    cv::fillPoly(canvas, yellowFrameContours, cv::Scalar(0, 155, 155));
+    cv::addWeighted(image, 1, canvas, 0.5, 0, image);
+
     bool exceedRect = false; // 判断是否超出黄色区域
-
-    // 转换为对应的秒数
-    const int intervalSeconds = 5 * 60; // 延时5分钟
-
     for (auto &obj: boxarray) {
         if (obj.seg) {
             cv::Mat img_clone = image.clone();
@@ -259,73 +257,66 @@ void show_result(cv::Mat &image, const YOLOv8Seg::BoxSeg &boxarray) {
                 }
             }
 
-            if (float(not_in_count) / float(all_count) >= 0.3) {
+            if (float(not_in_count) / float(all_count) >= 0.4) {
                 exceedRect = true;
                 INFOD("all count: %d, not in count: %d", all_count, not_in_count);
-                // 获取当前时间点
-                auto currentTime = std::chrono::system_clock::now();
-                // 计算与上次保存时间的时间间隔
-                auto elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(
-                        currentTime - lastSaveTime).count();
-                if (elapsedSeconds >= intervalSeconds) {
-
-                    //图片保存位置
-                    if (!iLogger::exists(std::string("../workspace/images/" + iLogger::date_now()))) {
-                        iLogger::mkdirs(std::string("../workspace/images/" + iLogger::date_now()));
-                    }
-
-                    cv::imwrite(std::string(
-                            "../workspace/images/" + iLogger::date_now() + "/" + iLogger::time_now() + ".jpg"), image);
-
-                    // 写入数据库和关键帧
-                    MySQLUtil::execute("suep_echarger",
-                                       "insert into VideoDetectResult (ID, Site, Date, Result, Keyframe) values (%d, '%s', '%s', '%s', '%s')",
-                                       save_conut, "杨树浦路", iLogger::date_now().c_str(), "danger",
-                                       std::string("../workspace/images/" + iLogger::date_now() + "/" +
-                                                   iLogger::time_now() + ".jpg").c_str());
-
-                    // 更新上次保存时间
-                    lastSaveTime = currentTime;
-                    save_conut++;
-                }
-
             }
+
             img_clone(cv::Rect(obj.left, obj.top, obj.right - obj.left, obj.bottom - obj.top))
-                    .setTo(echargercolors[obj.class_label], mask);
-            cv::addWeighted(image, 0.5, img_clone, 0.5, 1, image);
+                    .setTo(exceedRect ? cv::Scalar(0, 0, 255) : echargercolors[obj.class_label], mask);
+            cv::addWeighted(image, 0.6, img_clone, 0.4, 1, image);
         }
 
         INFOD("rect: %.2f, %.2f, %.2f, %.2f, confi: %.2f, name: %s", obj.left, obj.top, obj.right, obj.bottom,
               obj.confidence, echargerlabels[obj.class_label]);
         cv::rectangle(image, cv::Point(obj.left, obj.top), cv::Point(obj.right, obj.bottom),
-                      echargercolors[obj.class_label], 1);
+                      exceedRect ? cv::Scalar(0, 0, 255) : echargercolors[obj.class_label], 1);
 
-        auto name = echargerlabels[obj.class_label];
-        auto caption = cv::format("%s %.2f", name, obj.confidence);
+        auto caption = cv::format("%s %.2f", echargerlabels[obj.class_label], obj.confidence);
         int text_width = cv::getTextSize(caption, 0, 0.5, 1, nullptr).width + 10;
 
         // 可视化结果
         cv::rectangle(image, cv::Point(obj.left - 3, obj.top - 20), cv::Point(obj.left + text_width, obj.top),
-                      echargercolors[obj.class_label], -1);
+                      exceedRect ? cv::Scalar(0, 0, 255) : echargercolors[obj.class_label], -1);
         cv::putText(image, caption, cv::Point(obj.left, obj.top - 5), 0, 0.5, cv::Scalar::all(0), 1, 8);
+
+        cv::resize(image, image, cv::Size(width, height));
+        auto currentTime = std::chrono::system_clock::now();
+        auto elapsedSeconds = std::chrono::duration_cast<std::chrono::seconds>(
+                currentTime - lastSaveTime).count();
+
+        // 写入数据库
+        const int intervalSeconds = 5 * 60; // 延时5分钟
+        if (elapsedSeconds >= intervalSeconds) {
+            //图片保存位置
+            if (!iLogger::exists(std::string("../workspace/images/video_1"))) {
+                iLogger::mkdirs(std::string("../workspace/images/video_1"));
+            }
+
+            cv::imwrite(std::string(
+                    "../workspace/images/video_1/" + iLogger::time_now() + ".jpg"), image);
+            // 写入数据库和关键帧
+            MySQLUtil::execute("suep_echarger",
+                               "insert into VideoDetectResult (Site, Date, DetObj, Result, Keyframe) values ('%s', '%s', '%s', '%s', '%s')",
+                               "杨树浦路", iLogger::time_now().c_str(), echargerlabels[obj.class_label],
+                               exceedRect ? "danger" : "normal",
+                               std::string("../workspace/images/video_1/" + iLogger::time_now() + ".jpg").c_str());
+            INFO("VideoDetectResult: %d, %s, %s, %s, %s, %s", 0, "杨树浦路",
+                 iLogger::time_now().c_str(), echargerlabels[obj.class_label],
+                 exceedRect ? "danger" : "normal",
+                 std::string("../workspace/images/video_1/" + iLogger::time_now() + ".jpg").c_str());
+            // 更新上次保存时间
+            lastSaveTime = currentTime;
+        }
     }
-    cv::Scalar RectColor = exceedRect ? cv::Scalar(0, 0, 255) : cv::Scalar(0, 155, 155);
-
-    // 在画布上绘制多边形
-    std::vector<std::vector<cv::Point>> yellowFrameContours{{yellowFrame.begin(), yellowFrame.end()}};
-    cv::polylines(canvas, yellowFrameContours, true, RectColor, 2);
-    cv::fillPoly(canvas, yellowFrameContours, RectColor);
-
-    // 叠加绘制结果到原始图像上
-    cv::addWeighted(image, 1, canvas, 0.5, 0, image);
 }
 
 
 // 生产者线程函数
 void SegInference(std::string in_video_url) {
-    cv::Mat image;
-    std::string onnx = "../workspace/model/eCharger-v8m.transd.onnx";
-    std::string engine = "../workspace/model/eCharger-v8m.transd.engine";
+    cv::Mat src_image;
+    std::string onnx = "../workspace/model/eCharger-v8x.transd.onnx";
+    std::string engine = "../workspace/model/eCharger-v8x.transd.engine";
     std::shared_ptr<YOLOv8SegInstance> seg = std::make_shared<YOLOv8SegInstance>(onnx, engine);
     if (!seg->startup()) {
         seg.reset();
@@ -334,28 +325,35 @@ void SegInference(std::string in_video_url) {
 
     srand((unsigned) time(NULL));
     INFO("opencv version: %s", CV_VERSION);
-    cv::VideoCapture cap = cv::VideoCapture(in_video_url);
 
+    cv::VideoCapture cap = cv::VideoCapture(in_video_url);
     if (!cap.isOpened()) {
         INFOE("Error opening video stream or file");
         return;
     }
     YOLOv8Seg::BoxSeg boxarray;
-    while (cap.read(image)) {
+    while (true) {
         try {
-            cv::Mat resize_img;
-            cv::resize(image, resize_img, cv::Size(640, int((640.0 / image.cols) * image.rows)));
+
+            if (!cap.read(src_image)) {
+                INFOE("can not read image from video: %s", in_video_url.c_str());
+                // 如果无法读取到图像，等待1min后再次尝试
+                std::this_thread::sleep_for(std::chrono::seconds(60));
+                continue;
+            }
+
+            cv::Mat dst_image;
+            cv::resize(src_image, dst_image, cv::Size(640, int((640.0 / src_image.cols) * src_image.rows)));
             // cudaEvent_t start, inf, show;
             // cudaEventCreate(&start);
             // cudaEventCreate(&inf);
             // cudaEventCreate(&show);
 
             // cudaEventRecord(start);
-            seg->inference(resize_img, boxarray);
+            seg->inference(dst_image, boxarray);
 
             // cudaEventRecord(inf);
-            show_result(resize_img, boxarray);
-            cv::resize(resize_img, image, cv::Size(image.rows, image.cols));
+            show_result(dst_image, boxarray, src_image.cols, src_image.rows);
             // cudaEventRecord(show);
 
             // float show_time, inf_time;
@@ -376,7 +374,7 @@ void SegInference(std::string in_video_url) {
                 return is_full;
             });
             // 图像加入队列
-            img_queue.push(image);
+            img_queue.push(dst_image);
 
             // 通知消费者
             cv_consumer.notify_one();
@@ -476,8 +474,8 @@ int main(int argc, char const *argv[]) {
     mysql::MySQLMgr::GetInstance()->add("suep_echarger", "127.0.0.1", 3306, "root", "12345678", "eCharger");
 
     // 推流参数
-    std::string in_url = "/home/zwy/PyWorkspace/eCharger/TRT_YOLOv8_Server/workspace/images/20230517.mp4";
-    int fps = 60, width = 1920, height = 1080, bitrate = 3000000;
+    std::string in_url =  "https://hzhls01.ys7.com:7990/v3/openlive/G54186723_3_2.m3u8?expire=1689841546&id=601811936111235072&t=69fbac7002520b0f67bc2c04d3fd9db2efe746477fea6c8a5b5a11b3d384398d&ev=100&u=2c0cbfa84d874036b0169ba90a4d560d";
+    int fps = 25, width = 1280, height = 720, bitrate = 9000000;
     std::string h264profile = "high444"; //(baseline | high | high10 | high422 | high444 | main) (default: high444)"
     std::string out_url = "rtmp://192.168.0.113:1935/myapp/mystream";
 
@@ -489,8 +487,43 @@ int main(int argc, char const *argv[]) {
     std::thread consumer(video2flv, width, height, fps, bitrate, h264profile, out_url);
 
     // 等待线程结束
-    producer.join();
-    consumer.join();
+    if (producer.joinable())
+        producer.join();
+    if (consumer.joinable())
+        consumer.join();
     return 0;
 
 }
+/**
+ * Input #0, flv, from 'rtmp://192.168.0.113:1935/myapp/mystream':/0
+  Metadata:
+    |RtmpSampleAccess: true
+    Server          : NGINX HTTP-FLV (https://github.com/winshining/nginx-http-flv-module)
+    displayWidth    : 1280
+    displayHeight   : 720
+    fps             : 0
+    profile         :
+    level           :
+    Duration: 00:00:00.00, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: h264 (Main), yuv420p(progressive), 1280x720, 9000 kb/s, 25 fps, 25 tbr, 1k tbn
+  11.84 M-V:  0.874 fd=  12 aq=    0KB vq=    0KB sq=    0B f=0/0
+ * */
+
+/**
+ *Input #0, hls, from 'https://xy3hls02.ys7.com:7990/v3/openlive/G54186723_3_2.m3u8?expire=1689754817&id=601448168831328256&t=ca872a072ed3f0035dd20df4a6997f378acf66bd6b2ecf1cb93a592fd7d4ec82&ev=100&u=d1b08689e3cf4bc383c99fa88837c1ab':
+  Duration: N/A, start: 606.000000, bitrate: N/A
+  Program 0
+    Metadata:
+      variant_bitrate : 0
+  Stream #0:0: Video: h264 (Main) ([27][0][0][0] / 0x001B), yuvj420p(pc, bt709), 1280x720, 25 fps, 25 tbr, 90k tbn
+    Metadata:
+      variant_bitrate : 0
+[https @ 0x147881c00] Opening 'https://xy3hls02.ys7.com:7990/openlivedata/G54186723_3_2/daec040f0215457a8a5a6addc1673787-306.ts?Usr=11b8a93e1cc546aea6a675e1e5b0cf21' for reading
+  Duration: N/A, start: 606.000000, bitrate: N/A
+  Program 0
+    Metadata:
+      variant_bitrate : 0
+  Stream #0:0: Video: h264 (Main) ([27][0][0][0] / 0x001B), yuvj420p(pc, bt709), 1280x720, 25 fps, 25 tbr, 90k tbn
+    Metadata:
+      variant_bitrate : 0
+ * */
