@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-11 17:47:19
  * @LastEditors: zwy
- * @LastEditTime: 2023-07-20 19:18:51
+ * @LastEditTime: 2023-07-20 22:31:19
  */
 
 #include "src/HttpServer/http_server.hpp"
@@ -344,64 +344,76 @@ void show_result(cv::Mat &image, const YOLOv8Seg::BoxSeg &boxarray, int width, i
 }
 
 // 生产者线程函数
-void SegInference(std::string in_video_url)
+void SegInference(std::shared_ptr<YOLOv8SegInstance> seg, std::string in_video_url)
 {
     cv::Mat src_image;
-    std::string onnx = "../workspace/model/eCharger-v8x.transd.onnx";
-    std::string engine = "../workspace/model/eCharger-v8x.transd.engine";
-    std::shared_ptr<YOLOv8SegInstance> seg = std::make_shared<YOLOv8SegInstance>(onnx, engine);
-    if (!seg->startup())
-    {
-        seg.reset();
-        exit(1);
-    }
-
-    srand((unsigned)time(NULL));
-    INFO("opencv version: %s", CV_VERSION);
-
-    cv::VideoCapture cap = cv::VideoCapture(in_video_url);
-    if (!cap.isOpened())
-    {
-        INFOE("Error opening video stream or file");
-        return;
-    }
+    cv::VideoCapture cap;
     YOLOv8Seg::BoxSeg boxarray;
+    int reconnect_attempts = 0; // 链接次数
+    const int max_reconnect_attempts = 5; // 设置最大重连次数
+
     while (true)
     {
-        try
+        // 尝试重新连接视频流
+        if (!cap.isOpened())
         {
+            if (reconnect_attempts >= max_reconnect_attempts)
+            {
+                INFOE("Max reconnect attempts reached. Exiting producer thread.");
+                break;
+            }
+
+            INFO("Attempting to reconnect to video: %s", in_video_url.c_str());
+            cap.release(); // 释放之前的 VideoCapture 对象
+            cap = cv::VideoCapture(in_video_url);
             if (!cap.isOpened())
             {
-                INFOE("can not read image from video: %s", in_video_url.c_str());
-                // 如果无法读取到图像，等待1min后再次尝试
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                cap = cv::VideoCapture(in_video_url);
+                reconnect_attempts++;
+                INFO("Failed to reconnect. Waiting for 1 minute before retrying...");
+                std::this_thread::sleep_for(std::chrono::seconds(60));
+                continue;
             }
-            cap.read(src_image);
-            cv::Mat dst_image;
-            cv::resize(src_image, dst_image, cv::Size(640, int((640.0 / src_image.cols) * src_image.rows)));
-            seg->inference(dst_image, boxarray);
-            show_result(dst_image, boxarray, src_image.cols, src_image.rows);
-            // 加锁队列
-            std::unique_lock<std::mutex> lock(mtx);
-            // 队列满，等待消费者消费
-            cv_producer.wait(lock, []()
-                             {
+            else
+            {
+                INFO("Reconnected to video: %s", in_video_url.c_str());
+                reconnect_attempts = 0;
+            }
+        }
+        
+        try
+        {
+            if (cap.read(src_image))
+            {
+                cv::Mat dst_image;
+                cv::resize(src_image, dst_image, cv::Size(640, int((640.0 / src_image.cols) * src_image.rows)));
+                seg->inference(dst_image, boxarray);
+                show_result(dst_image, boxarray, src_image.cols, src_image.rows);
+                // 加锁队列
+                std::unique_lock<std::mutex> lock(mtx);
+                // 队列满，等待消费者消费
+                cv_producer.wait(lock, []()
+                                 {
                         bool is_full = img_queue.size() < 30;
                         if (!is_full) {
                             INFO("Producer is waiting...");
                         }
                         return is_full; });
-            // 图像加入队列
-            img_queue.push(dst_image);
-            // 通知消费者
-            cv_consumer.notify_all();
+                // 图像加入队列
+                img_queue.push(dst_image);
+                // 通知消费者
+                cv_consumer.notify_all();
+            }
+            else{
+                INFOE("can not read video: %s", in_video_url.c_str());
+            }
         }
         catch (const std::exception &ex)
         {
             INFOE("Error occurred in producer_thread: %s", ex.what());
         }
     }
+    // 释放 VideoCapture 对象
+    cap.release();
 }
 
 // 消费者线程函数
@@ -492,8 +504,11 @@ void video2flv(double width, double height, int fps, int bitrate, std::string co
     avformat_free_context(ofmt_ctx);
 }
 
+
+
 int main(int argc, char const *argv[])
 {
+    INFO("opencv version: %s", CV_VERSION);
 
     // 数据库初始化
     mysql::MySQLMgr::GetInstance()->add("suep_echarger", "127.0.0.1", 3306, "root", "12345678", "eCharger");
@@ -508,8 +523,18 @@ int main(int argc, char const *argv[])
     iLogger::set_log_level(iLogger::LogLevel::Info);
     iLogger::set_logger_save_directory("../workspace/log");
 
+    // YOLOv8 初始化
+    std::string onnx = "../workspace/model/eCharger-v8x.transd.onnx";
+    std::string engine = "../workspace/model/eCharger-v8x.transd.engine";
+    std::shared_ptr<YOLOv8SegInstance> seg = std::make_shared<YOLOv8SegInstance>(onnx, engine);
+    if (!seg->startup())
+    {
+        seg.reset();
+        exit(1);
+    }
+
     // 创建生产者和消费者线程
-    std::thread producer(SegInference, in_url);
+    std::thread producer(SegInference, seg, in_url);
     std::thread consumer(video2flv, width, height, fps, bitrate, h264profile, out_url);
 
     // 等待线程结束
