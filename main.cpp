@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-11 17:47:19
  * @LastEditors: zwy
- * @LastEditTime: 2023-07-20 22:31:19
+ * @LastEditTime: 2023-07-22 10:39:35
  */
 
 #include "src/HttpServer/http_server.hpp"
@@ -14,6 +14,10 @@
 #include "src/SqlWarpper/mysql.h"
 
 #include <string>
+#include <mutex>
+#include <thread>
+#include <condition_variable>
+#include <atomic>
 
 #include "src/TrtLib/common/ilogger.hpp"
 #include "src/TrtLib/builder/trt_builder.hpp"
@@ -30,7 +34,9 @@ extern "C"
 
 // 用于同步的互斥锁和条件变量
 std::mutex mtx;
-std::condition_variable cv_producer, cv_consumer, cv_read;
+// std::condition_variable cv_producer, cv_consumer;
+std::condition_variable _cv;
+
 // 图像队列
 std::queue<cv::Mat> img_queue;
 
@@ -96,7 +102,8 @@ public:
 
 YOLOv8SegInstance::YOLOv8SegInstance(const std::string &onnx_file, const std::string &engine_file) : m_onnx_file(
                                                                                                          onnx_file),
-                                                                                                     m_engine_file(engine_file)
+                                                                                                     m_engine_file(
+                                                                                                         engine_file)
 {
     std::cout << "                       " << std::endl;
     std::cout
@@ -347,11 +354,10 @@ void show_result(cv::Mat &image, const YOLOv8Seg::BoxSeg &boxarray, int width, i
 void SegInference(std::shared_ptr<YOLOv8SegInstance> seg, std::string in_video_url)
 {
     cv::Mat src_image;
-    cv::VideoCapture cap;
     YOLOv8Seg::BoxSeg boxarray;
-    int reconnect_attempts = 0; // 链接次数
+    int reconnect_attempts = 0;           // 链接次数
     const int max_reconnect_attempts = 5; // 设置最大重连次数
-
+    cv::VideoCapture cap;
     while (true)
     {
         // 尝试重新连接视频流
@@ -375,41 +381,40 @@ void SegInference(std::shared_ptr<YOLOv8SegInstance> seg, std::string in_video_u
             }
             else
             {
-                INFO("Reconnected to video: %s", in_video_url.c_str());
+                INFO("reconnected to video: %s", in_video_url.c_str());
                 reconnect_attempts = 0;
             }
         }
-        
-        try
+        else
         {
-            if (cap.read(src_image))
+            try
             {
+                cap.read(src_image);
                 cv::Mat dst_image;
                 cv::resize(src_image, dst_image, cv::Size(640, int((640.0 / src_image.cols) * src_image.rows)));
                 seg->inference(dst_image, boxarray);
                 show_result(dst_image, boxarray, src_image.cols, src_image.rows);
+
                 // 加锁队列
                 std::unique_lock<std::mutex> lock(mtx);
                 // 队列满，等待消费者消费
-                cv_producer.wait(lock, []()
-                                 {
-                        bool is_full = img_queue.size() < 30;
-                        if (!is_full) {
-                            INFO("Producer is waiting...");
-                        }
-                        return is_full; });
+                _cv.wait(lock, []()
+                         {
+                    bool is_full = img_queue.size() < 30;
+                    if (!is_full) {
+                        INFO("Producer is waiting...");
+                    }
+                    return is_full; });
                 // 图像加入队列
                 img_queue.push(dst_image);
                 // 通知消费者
-                cv_consumer.notify_all();
+                _cv.notify_one();
             }
-            else{
-                INFOE("can not read video: %s", in_video_url.c_str());
+            catch (const std::exception &ex)
+            {
+                INFOE("Error occurred in producer_thread: %s", ex.what());
+                cap.release();
             }
-        }
-        catch (const std::exception &ex)
-        {
-            INFOE("Error occurred in producer_thread: %s", ex.what());
         }
     }
     // 释放 VideoCapture 对象
@@ -419,12 +424,6 @@ void SegInference(std::shared_ptr<YOLOv8SegInstance> seg, std::string in_video_u
 // 消费者线程函数
 void video2flv(double width, double height, int fps, int bitrate, std::string codec_profile, std::string out_url)
 {
-
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 9, 100)
-    av_register_all();
-#endif
-    avformat_network_init();
-
     const char *output = out_url.c_str();
     // std::vector<uint8_t> imgbuf(height * width * 3 + 16);
     // cv::Mat image(height, width, CV_8UC3, imgbuf.data(), width * 3);
@@ -461,9 +460,6 @@ void video2flv(double width, double height, int fps, int bitrate, std::string co
         INFOE("Could not write header!");
         exit(1);
     }
-
-    //    bool end_of_stream = false;
-    INFO("begin to flv url: %s", output);
     while (true)
     {
         try
@@ -473,8 +469,8 @@ void video2flv(double width, double height, int fps, int bitrate, std::string co
             INFOD("ffmpeg: the size of image queue : %d ", img_queue.size());
 
             // 队列空，等待生产者生产
-            cv_consumer.wait(lock, []()
-                             { return !img_queue.empty(); });
+            _cv.wait(lock, []()
+                     { return !img_queue.empty(); });
 
             // 取出队首图像
             cv::Mat image = img_queue.front();
@@ -482,10 +478,9 @@ void video2flv(double width, double height, int fps, int bitrate, std::string co
 
             // 解锁队列
             lock.unlock();
-            cv_producer.notify_one();
+            _cv.notify_one();
 
             // 消费图像consumeImage(image);
-            cv::resize(image, image, cv::Size(width, height));
             const int stride[] = {static_cast<int>(image.step[0])};
             sws_scale(swsctx, &image.data, stride, 0, image.rows, frame->data, frame->linesize);
             frame->pts += av_rescale_q(1, out_codec_ctx->time_base, out_stream->time_base);
@@ -494,6 +489,51 @@ void video2flv(double width, double height, int fps, int bitrate, std::string co
         catch (const std::exception &ex)
         {
             INFOE("Error occurred in consumer_thread: %s", ex.what());
+            // 视频掉线，进行重连
+            // 关闭之前的 AVFormatContext 和 AVCodecContext
+            av_write_trailer(ofmt_ctx);
+            av_frame_free(&frame);
+            avcodec_close(out_codec_ctx);
+            avio_close(ofmt_ctx->pb);
+            avformat_free_context(ofmt_ctx);
+
+            // 清空图像帧队列
+            std::unique_lock<std::mutex> lock(mtx);
+            while (!img_queue.empty())
+            {
+                img_queue.pop();
+            }
+            lock.unlock();
+
+            // 等待一段时间
+            std::this_thread::sleep_for(std::chrono::seconds(60));
+
+            // 重连操作，重新初始化 AVFormatContext 和 AVCodecContext
+            initialize_avformat_context(ofmt_ctx, "flv");
+            initialize_io_context(ofmt_ctx, output);
+            out_codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+            out_stream = avformat_new_stream(ofmt_ctx, out_codec);
+            out_codec_ctx = avcodec_alloc_context3(out_codec);
+            set_codec_params(ofmt_ctx, out_codec_ctx, width, height, fps, bitrate);
+            initialize_codec_stream(out_stream, out_codec_ctx, out_codec, codec_profile);
+
+            out_stream->codecpar->extradata = out_codec_ctx->extradata;
+            out_stream->codecpar->extradata_size = out_codec_ctx->extradata_size;
+
+            int ret = avformat_write_header(ofmt_ctx, nullptr);
+            if (ret < 0)
+            {
+                INFOE("Could not write header!");
+                exit(1);
+            }
+
+            // 重新初始化 Sample Scaler 和 Frame Buffer
+            sws_freeContext(swsctx);
+            swsctx = initialize_sample_scaler(out_codec_ctx, width, height);
+            frame = allocate_frame_buffer(out_codec_ctx, width, height);
+            INFO("Failed to reconnect. Waiting for 1 minute before retrying...");
+            // 重新开始推流
+            continue;
         }
     }
     av_write_trailer(ofmt_ctx);
@@ -505,17 +545,21 @@ void video2flv(double width, double height, int fps, int bitrate, std::string co
 }
 
 
-
 int main(int argc, char const *argv[])
 {
+
     INFO("opencv version: %s", CV_VERSION);
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 9, 100)
+    av_register_all();
+#endif
+    avformat_network_init();
 
     // 数据库初始化
     mysql::MySQLMgr::GetInstance()->add("suep_echarger", "127.0.0.1", 3306, "root", "12345678", "eCharger");
 
     // 推流参数
-    std::string in_url = "https://hzhls05.ys7.com:7994/v3/openlive/G54186723_3_2.m3u8?expire=1689928610&id=602177108236509184&t=800ecf6eec889973e9f34ed1dc80879da9f0b1a79866334038c63f062e2a6ca1&ev=100&u=7f604abe45c24f7794eecc1e80adfe98";
-    int fps = 25, width = 1280, height = 720, bitrate = 300000;
+    std::string in_url = "https://xy3hls01.ys7.com:7986/v3/openlive/G54186723_3_2.m3u8?expire=1690015607&id=602542000104804352&t=ba48702d47649b79d2b456f4d788e856258c7e241ef2a9c15b3373d093f02823&ev=100&u=0b84e9e8ec1e4b6c871bcbaeb405d764";
+    int fps = 25, width = 1280, height = 720, bitrate = 3000000;
     std::string h264profile = "high444"; //(baseline | high | high10 | high422 | high444 | main) (default: high444)"
     std::string out_url = "rtmp://192.168.0.113:1935/myapp/mystream";
 
