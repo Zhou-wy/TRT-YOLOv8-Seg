@@ -1,3 +1,11 @@
+/*
+ * @description: 
+ * @version: 
+ * @Author: zwy
+ * @Date: 2023-07-21 09:54:48
+ * @LastEditors: zwy
+ * @LastEditTime: 2023-07-23 12:41:02
+ */
 
 #ifndef _RTSP2FLV_HPP
 #define _RTSP2FLV_HPP
@@ -29,4 +37,25 @@ AVFrame *allocate_frame_buffer(AVCodecContext *codec_ctx, double width, double h
 void write_frame(AVCodecContext *codec_ctx, AVFormatContext *fmt_ctx, AVFrame *frame);
 void stream_video(double width, double height, int fps, int camID, int bitrate, std::string codec_profile, std::string server);
 void stream_video(double width, double height, int fps, std::string camID, int bitrate, std::string codec_profile, std::string server);
+
+
+// 自定义异常类
+class FFmpegException : public std::exception
+{
+public:
+    FFmpegException(const char *msg) : msg_(msg) {}
+
+    const char *what() const noexcept override
+    {
+        return msg_;
+    }
+
+private:
+    const char *msg_;
+};
+
+// 自定义错误处理回调函数
+void ffmpeg_error_handler(void *ptr, int level, const char *fmt, va_list vl);
+
+
 #endif

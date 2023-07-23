@@ -273,6 +273,18 @@ void stream_video(double width, double height, int fps, std::string camID, int b
     avformat_free_context(ofmt_ctx);
 }
 
+void ffmpeg_error_handler(void *ptr, int level, const char *fmt, va_list vl)
+{
+    if (level <= AV_LOG_ERROR)
+    {
+        char buffer[1024];
+        vsnprintf(buffer, sizeof(buffer), fmt, vl);
+
+        // 抛出 C++ 异常
+        throw FFmpegException(buffer);
+    }
+}
+
 // int main(int argc, char *argv[])
 // {
 //     int cameraID = 0, fps = 30, width = 800, height = 600, bitrate = 300000;

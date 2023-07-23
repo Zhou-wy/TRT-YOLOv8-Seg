@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-11 17:47:19
  * @LastEditors: zwy
- * @LastEditTime: 2023-07-22 10:39:35
+ * @LastEditTime: 2023-07-23 13:21:01
  */
 
 #include "src/HttpServer/http_server.hpp"
@@ -45,6 +45,7 @@ std::vector<cv::Scalar> echargercolors = {
     {0, 255, 0}, // Green
     {255, 0, 0}, // Bule
 };
+bool is_consuming = true; // 添加标志变量，控制消费者线程退出
 
 class YOLOv8SegInstance
 {
@@ -294,7 +295,7 @@ void show_result(cv::Mat &image, const YOLOv8Seg::BoxSeg &boxarray, int width, i
                 }
             }
 
-            if (float(not_in_count) / float(all_count) >= 0.4)
+            if (float(not_in_count) / float(all_count) >= 0.2)
             {
                 exceedRect = true;
                 INFOD("all count: %d, not in count: %d", all_count, not_in_count);
@@ -327,24 +328,24 @@ void show_result(cv::Mat &image, const YOLOv8Seg::BoxSeg &boxarray, int width, i
     if (elapsedSeconds >= intervalSeconds)
     {
         // 图片保存位置
-        if (!iLogger::exists(std::string("../workspace/images/video_1")))
+        if (!iLogger::exists(std::string("../workspace/images/G5418672303")))
         {
-            iLogger::mkdirs(std::string("../workspace/images/video_1"));
+            iLogger::mkdirs(std::string("../workspace/images/G5418672303"));
         }
 
         cv::imwrite(std::string(
-                        "../workspace/images/video_1/" + iLogger::time_now() + ".jpg"),
+                        "../workspace/images/G5418672303/" + iLogger::time_now() + ".jpg"),
                     image);
         // 写入数据库和关键帧
         MySQLUtil::execute("suep_echarger",
                            "insert into VideoDetectResult (Site, Date, DetObj, Result, Keyframe) values ('%s', '%s', '%s', '%s', '%s')",
                            "杨树浦路", iLogger::time_now().c_str(), det_obj.c_str(),
                            exceedRect ? "danger" : "normal",
-                           std::string("../workspace/images/video_1/" + iLogger::time_now() + ".jpg").c_str());
+                           std::string("../workspace/images/G5418672303/" + iLogger::time_now() + ".jpg").c_str());
         INFO("VideoDetectResult: %d, %s, %s, %s, %s, %s", 0, "杨树浦路",
              iLogger::time_now().c_str(), det_obj.c_str(),
              exceedRect ? "danger" : "normal",
-             std::string("../workspace/images/video_1/" + iLogger::time_now() + ".jpg").c_str());
+             std::string("../workspace/images/G5418672303/" + iLogger::time_now() + ".jpg").c_str());
         // 更新上次保存时间
         lastSaveTime = currentTime;
     }
@@ -383,13 +384,20 @@ void SegInference(std::shared_ptr<YOLOv8SegInstance> seg, std::string in_video_u
             {
                 INFO("reconnected to video: %s", in_video_url.c_str());
                 reconnect_attempts = 0;
+                is_consuming = true;
             }
         }
         else
         {
             try
             {
-                cap.read(src_image);
+                if (!cap.read(src_image))
+                {
+                    cap.release();
+                    is_consuming = false;
+                    continue;
+                }
+
                 cv::Mat dst_image;
                 cv::resize(src_image, dst_image, cv::Size(640, int((640.0 / src_image.cols) * src_image.rows)));
                 seg->inference(dst_image, boxarray);
@@ -397,23 +405,27 @@ void SegInference(std::shared_ptr<YOLOv8SegInstance> seg, std::string in_video_u
 
                 // 加锁队列
                 std::unique_lock<std::mutex> lock(mtx);
-                // 队列满，等待消费者消费
-                _cv.wait(lock, []()
-                         {
+                {
+                    // 队列满，等待消费者消费
+                    _cv.wait(lock, []()
+                             {
                     bool is_full = img_queue.size() < 30;
+                    
                     if (!is_full) {
                         INFO("Producer is waiting...");
                     }
                     return is_full; });
-                // 图像加入队列
-                img_queue.push(dst_image);
-                // 通知消费者
-                _cv.notify_one();
+
+                    // 图像加入队列
+                    img_queue.push(dst_image);
+                    is_consuming = true;
+                    // 通知消费者
+                    _cv.notify_one();
+                }
             }
             catch (const std::exception &ex)
             {
                 INFOE("Error occurred in producer_thread: %s", ex.what());
-                cap.release();
             }
         }
     }
@@ -460,35 +472,38 @@ void video2flv(double width, double height, int fps, int bitrate, std::string co
         INFOE("Could not write header!");
         exit(1);
     }
+
     while (true)
     {
-        try
+        if (is_consuming)
         {
             // 加锁队列
             std::unique_lock<std::mutex> lock(mtx);
-            INFOD("ffmpeg: the size of image queue : %d ", img_queue.size());
+            {
+                // 队列空，等待生产者生产
+                _cv.wait(lock, []()
+                         { return !img_queue.empty(); });
 
-            // 队列空，等待生产者生产
-            _cv.wait(lock, []()
-                     { return !img_queue.empty(); });
+                // 取出队首图像
+                cv::Mat image = img_queue.front();
+                img_queue.pop();
 
-            // 取出队首图像
-            cv::Mat image = img_queue.front();
-            img_queue.pop();
+                // 解锁队列
+                lock.unlock();
+                _cv.notify_one();
+                // std::cout << "[consumer]: " << img_queue.size() << std::endl;
 
-            // 解锁队列
-            lock.unlock();
-            _cv.notify_one();
-
-            // 消费图像consumeImage(image);
-            const int stride[] = {static_cast<int>(image.step[0])};
-            sws_scale(swsctx, &image.data, stride, 0, image.rows, frame->data, frame->linesize);
-            frame->pts += av_rescale_q(1, out_codec_ctx->time_base, out_stream->time_base);
-            write_frame(out_codec_ctx, ofmt_ctx, frame);
+                // 消费图像consumeImage(image);
+                const int stride[] = {static_cast<int>(image.step[0])};
+                sws_scale(swsctx, &image.data, stride, 0, image.rows, frame->data, frame->linesize);
+                frame->pts += av_rescale_q(1, out_codec_ctx->time_base, out_stream->time_base);
+                write_frame(out_codec_ctx, ofmt_ctx, frame);
+            }
         }
-        catch (const std::exception &ex)
+        else
         {
-            INFOE("Error occurred in consumer_thread: %s", ex.what());
+            // 捕获其他可能的 C++ 异常并处理
+            INFOW("Repush the video stream in consumer_thread");
             // 视频掉线，进行重连
             // 关闭之前的 AVFormatContext 和 AVCodecContext
             av_write_trailer(ofmt_ctx);
@@ -544,7 +559,6 @@ void video2flv(double width, double height, int fps, int bitrate, std::string co
     avformat_free_context(ofmt_ctx);
 }
 
-
 int main(int argc, char const *argv[])
 {
 
@@ -558,14 +572,16 @@ int main(int argc, char const *argv[])
     mysql::MySQLMgr::GetInstance()->add("suep_echarger", "127.0.0.1", 3306, "root", "12345678", "eCharger");
 
     // 推流参数
-    std::string in_url = "https://xy3hls01.ys7.com:7986/v3/openlive/G54186723_3_2.m3u8?expire=1690015607&id=602542000104804352&t=ba48702d47649b79d2b456f4d788e856258c7e241ef2a9c15b3373d093f02823&ev=100&u=0b84e9e8ec1e4b6c871bcbaeb405d764";
-    int fps = 25, width = 1280, height = 720, bitrate = 3000000;
+    std::string in_url = "https://xy3hls01.ys7.com:7986/v3/openlive/G54186723_3_2.m3u8?expire=1690103017&id=602908623768649728&t=682989f71dcd9ab6e69237249305efef30896fb1b12241ed402209d100a697e7&ev=100&u=7b185de8e1c545c683e0145e62a404ea";
+    int fps = 25, width = 1280, height = 720, bitrate = 900000;
     std::string h264profile = "high444"; //(baseline | high | high10 | high422 | high444 | main) (default: high444)"
     std::string out_url = "rtmp://192.168.0.113:1935/myapp/mystream";
 
     // 日志设置
     iLogger::set_log_level(iLogger::LogLevel::Info);
     iLogger::set_logger_save_directory("../workspace/log");
+    // 设置错误回调函数
+    // av_log_set_callback(ffmpeg_error_handler);
 
     // YOLOv8 初始化
     std::string onnx = "../workspace/model/eCharger-v8x.transd.onnx";
