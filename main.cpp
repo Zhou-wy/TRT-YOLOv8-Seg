@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-11 17:47:19
  * @LastEditors: zwy
- * @LastEditTime: 2023-07-23 13:21:01
+ * @LastEditTime: 2023-07-24 17:16:42
  */
 
 #include "src/HttpServer/http_server.hpp"
@@ -376,8 +376,8 @@ void SegInference(std::shared_ptr<YOLOv8SegInstance> seg, std::string in_video_u
             if (!cap.isOpened())
             {
                 reconnect_attempts++;
-                INFO("Failed to reconnect. Waiting for 1 minute before retrying...");
-                std::this_thread::sleep_for(std::chrono::seconds(60));
+                INFO("Failed to reconnect. Waiting for 1 seconds before retrying...");
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
                 continue;
             }
             else
@@ -428,6 +428,7 @@ void SegInference(std::shared_ptr<YOLOv8SegInstance> seg, std::string in_video_u
                 INFOE("Error occurred in producer_thread: %s", ex.what());
             }
         }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     // 释放 VideoCapture 对象
     cap.release();
@@ -437,8 +438,7 @@ void SegInference(std::shared_ptr<YOLOv8SegInstance> seg, std::string in_video_u
 void video2flv(double width, double height, int fps, int bitrate, std::string codec_profile, std::string out_url)
 {
     const char *output = out_url.c_str();
-    // std::vector<uint8_t> imgbuf(height * width * 3 + 16);
-    // cv::Mat image(height, width, CV_8UC3, imgbuf.data(), width * 3);
+    bool is_first_connection = true;
 
     AVFormatContext *ofmt_ctx = nullptr;
     const AVCodec *out_codec = nullptr;
@@ -498,57 +498,35 @@ void video2flv(double width, double height, int fps, int bitrate, std::string co
                 sws_scale(swsctx, &image.data, stride, 0, image.rows, frame->data, frame->linesize);
                 frame->pts += av_rescale_q(1, out_codec_ctx->time_base, out_stream->time_base);
                 write_frame(out_codec_ctx, ofmt_ctx, frame);
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
             }
         }
         else
         {
-            // 捕获其他可能的 C++ 异常并处理
-            INFOW("Repush the video stream in consumer_thread");
-            // 视频掉线，进行重连
-            // 关闭之前的 AVFormatContext 和 AVCodecContext
             av_write_trailer(ofmt_ctx);
-            av_frame_free(&frame);
             avcodec_close(out_codec_ctx);
             avio_close(ofmt_ctx->pb);
-            avformat_free_context(ofmt_ctx);
 
-            // 清空图像帧队列
-            std::unique_lock<std::mutex> lock(mtx);
-            while (!img_queue.empty())
-            {
-                img_queue.pop();
-            }
-            lock.unlock();
-
-            // 等待一段时间
-            std::this_thread::sleep_for(std::chrono::seconds(60));
-
-            // 重连操作，重新初始化 AVFormatContext 和 AVCodecContext
-            initialize_avformat_context(ofmt_ctx, "flv");
-            initialize_io_context(ofmt_ctx, output);
-            out_codec = avcodec_find_encoder(AV_CODEC_ID_H264);
-            out_stream = avformat_new_stream(ofmt_ctx, out_codec);
-            out_codec_ctx = avcodec_alloc_context3(out_codec);
-            set_codec_params(ofmt_ctx, out_codec_ctx, width, height, fps, bitrate);
-            initialize_codec_stream(out_stream, out_codec_ctx, out_codec, codec_profile);
-
-            out_stream->codecpar->extradata = out_codec_ctx->extradata;
-            out_stream->codecpar->extradata_size = out_codec_ctx->extradata_size;
-
+            // Attempt to reopen the output context and output stream
             int ret = avformat_write_header(ofmt_ctx, nullptr);
             if (ret < 0)
             {
-                INFOE("Could not write header!");
-                exit(1);
+                // Reconnection failed, wait and retry
+                if (is_first_connection)
+                {
+                    // Exit the thread if the first connection attempt fails
+                    INFOE("Could not write header! Exiting consumer_thread.");
+                    break;
+                }
+                else
+                {
+                    // Retry after waiting for a certain interval
+                    std::this_thread::sleep_for(std::chrono::seconds(5));
+                    continue;
+                }
             }
-
-            // 重新初始化 Sample Scaler 和 Frame Buffer
-            sws_freeContext(swsctx);
-            swsctx = initialize_sample_scaler(out_codec_ctx, width, height);
-            frame = allocate_frame_buffer(out_codec_ctx, width, height);
-            INFO("Failed to reconnect. Waiting for 1 minute before retrying...");
-            // 重新开始推流
-            continue;
+            is_first_connection = false;
+            INFOW("Reconnected the video stream in consumer_thread");
         }
     }
     av_write_trailer(ofmt_ctx);
@@ -572,10 +550,13 @@ int main(int argc, char const *argv[])
     mysql::MySQLMgr::GetInstance()->add("suep_echarger", "127.0.0.1", 3306, "root", "12345678", "eCharger");
 
     // 推流参数
-    std::string in_url = "https://xy3hls01.ys7.com:7986/v3/openlive/G54186723_3_2.m3u8?expire=1690103017&id=602908623768649728&t=682989f71dcd9ab6e69237249305efef30896fb1b12241ed402209d100a697e7&ev=100&u=7b185de8e1c545c683e0145e62a404ea";
+    std::string in_url = "https://hzhls01.ys7.com:7987/v3/openlive/G54186723_3_2.m3u8?expire=1690276585&id=603636619169234944&t=7e902abaa5ed0ddf13a03ae08898c290b4d6a3b1441b0acb438a18afdeac01bf&ev=100&u=1f6e4d36fe26417a851505489bc6ad58";
     int fps = 25, width = 1280, height = 720, bitrate = 900000;
     std::string h264profile = "high444"; //(baseline | high | high10 | high422 | high444 | main) (default: high444)"
-    std::string out_url = "rtmp://192.168.0.113:1935/myapp/mystream";
+    std::string out_url = "rtmp://192.168.0.113:1935/eCharger/stream";
+
+    INFO("rtmp video: rtmp://192.168.0.113:1935/eCharger/stream");
+    INFO("http-flv video: http://192.168.0.113/live?port=1935&app=eCharger&stream=stream");
 
     // 日志设置
     iLogger::set_log_level(iLogger::LogLevel::Info);

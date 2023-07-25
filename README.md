@@ -7,6 +7,17 @@
 - Mysql 数据库
 - FFmpeg 推流
 
+
+ffmpeg 3.3.9 
+
+TensorRT 7.2.3.4 - 8.5
+
+MySQL 8.0
+
+OpenCV 4.5.5
+
+
+
 ## 一、YOLOv8 实例分割
 
 [YOLOv8](https://github.com/ultralytics/ultralytics)  是一个 SOTA 模型，它建立在以前 YOLO 版本的成功基础上，并引入了新的功能和改进，以进一步提升性能和灵活性。具体创新包括一个新的骨干网络、一个新的 Ancher-Free 检测头和一个新的损失函数。
