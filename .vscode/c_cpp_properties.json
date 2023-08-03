@@ -1,0 +1,25 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/src/YOLOv8Seg/**",
+                "${workspaceFolder}/src/VideoPusher/**",
+                "${workspaceFolder}/src/SqlWarpper/**",
+                "${workspaceFolder}/src/TrtLib/**",
+                "/usr/local/cuda/include/**",
+                "/usr/local/cuda/targets/x86_64-linux/include/**",
+                "/usr/local/include/opencv4/**",
+                "/home/zwy/TensorRT-7.2.3.4/include/**",
+                "/home/zwy/TensorRT-7.2.3.4/samples/**"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "gnu11",
+            "cppStandard": "gnu++11",
+            "intelliSenseMode": "linux-gcc-x64",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        }
+    ],
+    "version": 4
+}

@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-11 17:47:19
  * @LastEditors: zwy
- * @LastEditTime: 2023-07-24 17:16:42
+ * @LastEditTime: 2023-08-03 13:55:13
  */
 
 #include "src/HttpServer/http_server.hpp"
@@ -45,7 +45,7 @@ std::vector<cv::Scalar> echargercolors = {
     {0, 255, 0}, // Green
     {255, 0, 0}, // Bule
 };
-bool is_consuming = true; // 添加标志变量，控制消费者线程退出
+// bool is_consuming = true; // 添加标志变量，控制消费者线程退出
 
 class YOLOv8SegInstance
 {
@@ -376,56 +376,48 @@ void SegInference(std::shared_ptr<YOLOv8SegInstance> seg, std::string in_video_u
             if (!cap.isOpened())
             {
                 reconnect_attempts++;
-                INFO("Failed to reconnect. Waiting for 1 seconds before retrying...");
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                INFO("Failed to reconnect. Waiting for 60 seconds before retrying...");
+                std::this_thread::sleep_for(std::chrono::seconds(60));
                 continue;
             }
             else
             {
                 INFO("reconnected to video: %s", in_video_url.c_str());
                 reconnect_attempts = 0;
-                is_consuming = true;
             }
         }
         else
         {
             try
             {
-                if (!cap.read(src_image))
-                {
-                    cap.release();
-                    is_consuming = false;
-                    continue;
-                }
-
+                cap.read(src_image);
                 cv::Mat dst_image;
+
                 cv::resize(src_image, dst_image, cv::Size(640, int((640.0 / src_image.cols) * src_image.rows)));
                 seg->inference(dst_image, boxarray);
                 show_result(dst_image, boxarray, src_image.cols, src_image.rows);
-
+  
                 // 加锁队列
                 std::unique_lock<std::mutex> lock(mtx);
-                {
-                    // 队列满，等待消费者消费
-                    _cv.wait(lock, []()
-                             {
+                // 队列满，等待消费者消费
+                _cv.wait(lock, []()
+                         {
                     bool is_full = img_queue.size() < 30;
                     
                     if (!is_full) {
-                        INFO("Producer is waiting...");
+                        INFO("Producer is full and waiting...");
                     }
                     return is_full; });
 
-                    // 图像加入队列
-                    img_queue.push(dst_image);
-                    is_consuming = true;
-                    // 通知消费者
-                    _cv.notify_one();
-                }
+                // 图像加入队列
+                img_queue.push(dst_image);
+                // 通知消费者
+                _cv.notify_all();
             }
             catch (const std::exception &ex)
             {
                 INFOE("Error occurred in producer_thread: %s", ex.what());
+                cap.release();
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -475,34 +467,33 @@ void video2flv(double width, double height, int fps, int bitrate, std::string co
 
     while (true)
     {
-        if (is_consuming)
+        try
         {
             // 加锁队列
             std::unique_lock<std::mutex> lock(mtx);
-            {
-                // 队列空，等待生产者生产
-                _cv.wait(lock, []()
-                         { return !img_queue.empty(); });
+            // 队列空，等待生产者生产
+            _cv.wait(lock, []()
+                     { return !img_queue.empty(); });
 
-                // 取出队首图像
-                cv::Mat image = img_queue.front();
-                img_queue.pop();
+            // 取出队首图像
+            cv::Mat image = img_queue.front();
+            img_queue.pop();
 
-                // 解锁队列
-                lock.unlock();
-                _cv.notify_one();
-                // std::cout << "[consumer]: " << img_queue.size() << std::endl;
+            // 解锁队列
+            lock.unlock();
+            _cv.notify_all();
+            // std::cout << "[consumer]: " << img_queue.size() << std::endl;
 
-                // 消费图像consumeImage(image);
-                const int stride[] = {static_cast<int>(image.step[0])};
-                sws_scale(swsctx, &image.data, stride, 0, image.rows, frame->data, frame->linesize);
-                frame->pts += av_rescale_q(1, out_codec_ctx->time_base, out_stream->time_base);
-                write_frame(out_codec_ctx, ofmt_ctx, frame);
-                std::this_thread::sleep_for(std::chrono::milliseconds(2));
-            }
+            // 消费图像consumeImage(image);
+            const int stride[] = {static_cast<int>(image.step[0])};
+            sws_scale(swsctx, &image.data, stride, 0, image.rows, frame->data, frame->linesize);
+            frame->pts += av_rescale_q(1, out_codec_ctx->time_base, out_stream->time_base);
+            write_frame(out_codec_ctx, ofmt_ctx, frame);
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
-        else
+        catch (const std::exception &ex)
         {
+            INFOE("Error occurred in consumer_thread: %s", ex.what());
             av_write_trailer(ofmt_ctx);
             avcodec_close(out_codec_ctx);
             avio_close(ofmt_ctx->pb);
@@ -550,7 +541,7 @@ int main(int argc, char const *argv[])
     mysql::MySQLMgr::GetInstance()->add("suep_echarger", "127.0.0.1", 3306, "root", "12345678", "eCharger");
 
     // 推流参数
-    std::string in_url = "https://hzhls01.ys7.com:7987/v3/openlive/G54186723_3_2.m3u8?expire=1690276585&id=603636619169234944&t=7e902abaa5ed0ddf13a03ae08898c290b4d6a3b1441b0acb438a18afdeac01bf&ev=100&u=1f6e4d36fe26417a851505489bc6ad58";
+    std::string in_url = "rtsp://admin:pf7trm2pgq@192.168.0.147:554/cam/realmonitor?channel=1&subtype=0";
     int fps = 25, width = 1280, height = 720, bitrate = 900000;
     std::string h264profile = "high444"; //(baseline | high | high10 | high422 | high444 | main) (default: high444)"
     std::string out_url = "rtmp://192.168.0.113:1935/eCharger/stream";

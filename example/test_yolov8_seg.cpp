@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-06 10:57:10
  * @LastEditors: zwy
- * @LastEditTime: 2023-07-16 17:13:37
+ * @LastEditTime: 2023-07-27 15:37:57
  */
 
 #include <string>
@@ -182,10 +182,10 @@ void show_result(cv::Mat &image, const YOLOv8Seg::BoxSeg &boxarray, int width, i
 //                               save_conut, "杨树浦路", iLogger::time_now().c_str(), echargerlabels[obj.class_label],
 //                               exceedRect ? "danger" : "normal",
 //                               std::string("../workspace/images/video_1/" + iLogger::time_now() + ".jpg").c_str());
-            INFO("VideoDetectResult: %d, %s, %s, %s, %s, %s", 1, "杨树浦路",
-                 iLogger::time_now().c_str(), echargerlabels[obj.class_label],
-                 exceedRect ? "danger" : "normal",
-                 std::string("../workspace/images/video_1/" + iLogger::time_now() + ".jpg").c_str());
+            // INFO("VideoDetectResult: %d, %s, %s, %s, %s, %s", 1, "杨树浦路",
+            //      iLogger::time_now().c_str(), echargerlabels[obj.class_label],
+            //      exceedRect ? "danger" : "normal",
+            //      std::string("../workspace/images/video_1/" + iLogger::time_now() + ".jpg").c_str());
 
 //            // 更新上次保存时间
 //            lastSaveTime = currentTime;
@@ -198,8 +198,8 @@ void show_result(cv::Mat &image, const YOLOv8Seg::BoxSeg &boxarray, int width, i
 int main(int argc, char const *argv[])
 {
 
-    std::string onnx = "../workspace/model/eCharger-v8m.transd.onnx";
-    std::string engine = "../workspace/model/eCharger-v8m.transd.engine";
+    std::string onnx = "../workspace/model/eCharger-v8x.transd.onnx";
+    std::string engine = "../workspace/model/eCharger-v8x.transd.engine";
     cv::Mat image = cv::imread("../workspace/images/over.jpg");
 
     iLogger::set_log_level(iLogger::LogLevel::Info);
@@ -212,11 +212,29 @@ int main(int argc, char const *argv[])
     }
     YOLOv8Seg::BoxSeg boxarray;
     cv::Mat resize_img;
-    cv::resize(image, resize_img, cv::Size(640, int((640.0 / image.cols) * image.rows)));
-    seg->inference(resize_img, boxarray);
-    show_result(resize_img, boxarray, image.cols, image.rows);
-//    cv::resize(resize_img, image, cv::Size(image.cols, image.rows));
 
-    cv::imwrite("../workspace/images/over_result_m.jpg", image);
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    float time;
+    // cv::resize(image, resize_img, cv::Size(640, int((640.0 / image.cols) * image.rows)));
+    // seg->inference(resize_img, boxarray);
+    // show_result(resize_img, boxarray, image.cols, image.rows);
+    for(int i = 0; i < 1000; i++){
+        cudaEventRecord(start);
+        cv::resize(image, resize_img, cv::Size(640, int((640.0 / image.cols) * image.rows)));
+        seg->inference(resize_img, boxarray);
+        show_result(resize_img, boxarray, image.cols, image.rows);
+
+        cudaEventRecord(stop);
+        cudaEventSynchronize(stop);
+
+  
+        cudaEventElapsedTime(&time, start, stop);
+        INFO("YOLOv8x inference is time-consuming: %.3f ms", time);
+    }
+    //    cv::resize(resize_img, image, cv::Size(image.cols, image.rows));
+
+    // cv::imwrite("../workspace/images/over_result_m.jpg", image);
     return 0;
 }

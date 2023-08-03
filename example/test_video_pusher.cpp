@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-13 16:28:02
  * @LastEditors: zwy
- * @LastEditTime: 2023-07-16 17:14:21
+ * @LastEditTime: 2023-07-31 16:32:40
  */
 #include <string>
 
@@ -95,19 +95,6 @@ YOLOv8SegInstance::YOLOv8SegInstance(const std::string &onnx_file, const std::st
 
 void show_result(cv::Mat &image, const YOLOv8Seg::BoxSeg &boxarray)
 {
-    /**
-     * @brief :黄色框区域 ->  安全区域
-     */
-    cv::Mat canvas = cv::Mat::zeros(image.size(), image.type());
-    std::vector<cv::Point2i> yellowFrame{{int(0.5334 * image.cols), int(0.4353 * image.rows)},
-                                         {int(0.5757 * image.cols), int(0.6034 * image.rows)},
-                                         {int(0.7050 * image.cols), int(0.6049 * image.rows)},
-                                         {int(0.6402 * image.cols), int(0.4384 * image.rows)}};
-
-    /**
-     * @brief :图像分割的结果可视化
-     */
-    bool exceedRect = false; // 判断是否超出黄色区域
 
     for (auto &obj : boxarray)
     {
@@ -116,64 +103,33 @@ void show_result(cv::Mat &image, const YOLOv8Seg::BoxSeg &boxarray)
             cv::Mat img_clone = image.clone();
             cv::Mat mask(obj.seg->height, obj.seg->width, CV_8U, obj.seg->data);
 
-            int all_count = cv::countNonZero(mask == 255);
-            int not_in_count = 0;
-            for (int row = 0; row < mask.rows; row++)
-            {
-                for (int col = 0; col < mask.cols; col++)
-                {
-                    // 获取像素值
-                    uchar pixel = mask.at<uchar>(row, col);
-                    // 检查像素是否为 255 且不在矩形内部
-                    if (pixel == 255)
-                    {
-                        if (cv::pointPolygonTest(yellowFrame, cv::Point2i(col + obj.left, row + obj.top), false) == -1)
-                            not_in_count++;
-                    }
-                }
-            }
-
-            if (float(not_in_count) / float(all_count) >= 0.3)
-            {
-                exceedRect = true;
-                INFO("all count: %d, not in count: %d", all_count, not_in_count);
-            }
             img_clone(cv::Rect(obj.left, obj.top, obj.right - obj.left, obj.bottom - obj.top))
-                .setTo(echargercolors[obj.class_label], mask);
+                .setTo(colors[obj.class_label], mask);
             cv::addWeighted(image, 0.5, img_clone, 0.5, 1, image);
         }
 
         // INFO("rect: %.2f, %.2f, %.2f, %.2f, confi: %.2f, name: %s", obj.left, obj.top, obj.right, obj.bottom,
         //      obj.confidence, echargerlabels[obj.class_label]);
         cv::rectangle(image, cv::Point(obj.left, obj.top), cv::Point(obj.right, obj.bottom),
-                      echargercolors[obj.class_label], 1);
+                      colors[obj.class_label], 1);
 
-        auto name = echargerlabels[obj.class_label];
+        auto name = cocolabels[obj.class_label];
         auto caption = cv::format("%s %.2f", name, obj.confidence);
         int text_width = cv::getTextSize(caption, 0, 0.5, 1, nullptr).width + 10;
 
         // 可视化结果
         cv::rectangle(image, cv::Point(obj.left - 3, obj.top - 20), cv::Point(obj.left + text_width, obj.top),
-                      echargercolors[obj.class_label], -1);
+                      colors[obj.class_label], -1);
         cv::putText(image, caption, cv::Point(obj.left, obj.top - 5), 0, 0.5, cv::Scalar::all(0), 1, 8);
     }
-    cv::Scalar RectColor = exceedRect ? cv::Scalar(0, 0, 255) : cv::Scalar(0, 155, 155);
-
-    // 在画布上绘制多边形
-    std::vector<std::vector<cv::Point>> yellowFrameContours{{yellowFrame.begin(), yellowFrame.end()}};
-    cv::polylines(canvas, yellowFrameContours, true, RectColor, 2);
-    cv::fillPoly(canvas, yellowFrameContours, RectColor);
-
-    // 叠加绘制结果到原始图像上
-    cv::addWeighted(image, 1, canvas, 0.5, 0, image);
 }
 
 // 生产者线程函数
 void SegInference(std::string in_video_url)
 {
     cv::Mat image;
-    std::string onnx = "../workspace/model/eCharger-v8m.transd.onnx";
-    std::string engine = "../workspace/model/eCharger-v8m.transd.engine";
+    std::string onnx = "/home/zwy/PyWorkspace/eCharger/TRT_YOLOv8_Server/yolov8s-seg.transd.onnx";
+    std::string engine = "/home/zwy/PyWorkspace/eCharger/TRT_YOLOv8_Server/yolov8s.transd.engine";
     std::shared_ptr<YOLOv8SegInstance> seg = std::make_shared<YOLOv8SegInstance>(onnx, engine);
     if (!seg->startup())
     {
@@ -337,7 +293,7 @@ int main(int argc, char const *argv[])
      * YOLOv8x -> 检测时间30ms + 可视化时间 11 ms -> 对应推流 20 fps
      */
     // std::string in_url = "rtsp://admin:admin123@192.168.0.213:554/cam/realmonitor?channel=1&subtype=0";
-    std::string in_url = "/home/zwy/PyWorkspace/eCharger/TRT_YOLOv8_Server/workspace/images/20230517.mp4";
+    std::string in_url = "rtsp://admin:pf7trm2pgq@192.168.0.147:554/cam/realmonitor?channel=1&subtype=0";
 
     int fps = 60, width = 1920, height = 1080, bitrate = 3000000;
     std::string h264profile = "main"; //(baseline | high | high10 | high422 | high444 | main) (default: high444)"
