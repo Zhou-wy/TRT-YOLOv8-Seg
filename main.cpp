@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-11 17:47:19
  * @LastEditors: zwy
- * @LastEditTime: 2023-08-03 13:55:13
+ * @LastEditTime: 2023-08-06 16:16:09
  */
 
 #include "src/HttpServer/http_server.hpp"
@@ -34,7 +34,6 @@ extern "C"
 
 // 用于同步的互斥锁和条件变量
 std::mutex mtx;
-// std::condition_variable cv_producer, cv_consumer;
 std::condition_variable _cv;
 
 // 图像队列

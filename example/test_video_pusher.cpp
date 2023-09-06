@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-13 16:28:02
  * @LastEditors: zwy
- * @LastEditTime: 2023-07-31 16:32:40
+ * @LastEditTime: 2023-09-06 13:55:48
  */
 #include <string>
 
@@ -104,22 +104,22 @@ void show_result(cv::Mat &image, const YOLOv8Seg::BoxSeg &boxarray)
             cv::Mat mask(obj.seg->height, obj.seg->width, CV_8U, obj.seg->data);
 
             img_clone(cv::Rect(obj.left, obj.top, obj.right - obj.left, obj.bottom - obj.top))
-                .setTo(colors[obj.class_label], mask);
+                .setTo(coco_colors[obj.class_label], mask);
             cv::addWeighted(image, 0.5, img_clone, 0.5, 1, image);
         }
 
         // INFO("rect: %.2f, %.2f, %.2f, %.2f, confi: %.2f, name: %s", obj.left, obj.top, obj.right, obj.bottom,
         //      obj.confidence, echargerlabels[obj.class_label]);
         cv::rectangle(image, cv::Point(obj.left, obj.top), cv::Point(obj.right, obj.bottom),
-                      colors[obj.class_label], 1);
+                      coco_colors[obj.class_label], 1);
 
-        auto name = cocolabels[obj.class_label];
+        auto name = coco_labels[obj.class_label];
         auto caption = cv::format("%s %.2f", name, obj.confidence);
         int text_width = cv::getTextSize(caption, 0, 0.5, 1, nullptr).width + 10;
 
         // 可视化结果
         cv::rectangle(image, cv::Point(obj.left - 3, obj.top - 20), cv::Point(obj.left + text_width, obj.top),
-                      colors[obj.class_label], -1);
+                      coco_colors[obj.class_label], -1);
         cv::putText(image, caption, cv::Point(obj.left, obj.top - 5), 0, 0.5, cv::Scalar::all(0), 1, 8);
     }
 }

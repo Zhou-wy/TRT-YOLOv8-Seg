@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-11 19:15:34
  * @LastEditors: zwy
- * @LastEditTime: 2023-07-11 19:58:50
+ * @LastEditTime: 2023-09-06 14:09:15
  */
 #include "../src/HttpServer/http_server.hpp"
 #include "../src/TrtLib/common/ilogger.hpp"
@@ -12,7 +12,7 @@
 #include "../src/TrtLib/builder/trt_builder.hpp"
 #include "color_lable.hpp"
 
-class YOLOv8SegInstance {
+class YOLOv8DetInstance {
 private:
     std::string m_engine_file;
     std::string m_onnx_file;
@@ -32,12 +32,13 @@ private:
     }
 
 public:
-    YOLOv8SegInstance(const std::string &onnx_file, const std::string &engine_file);
+    YOLOv8DetInstance(const std::string &onnx_file, const std::string &engine_file);
 
-    ~YOLOv8SegInstance() = default;;
+    ~YOLOv8DetInstance() = default;
+    
 
     bool startup() {
-        SegIns = get_infer(YOLOv8Seg::Task::seg);
+        SegIns = get_infer(YOLOv8Seg::Task::det);
         return SegIns != nullptr;
     }
 
@@ -57,8 +58,10 @@ public:
     }
 };
 
-YOLOv8SegInstance::YOLOv8SegInstance(const std::string &onnx_file, const std::string &engine_file) : m_onnx_file(
-        onnx_file), m_engine_file(engine_file) {
+YOLOv8DetInstance::YOLOv8DetInstance(const std::string &onnx_file, const std::string &engine_file) : m_onnx_file(
+                                                                                                         onnx_file),
+                                                                                                     m_engine_file(engine_file)
+{
     std::cout << "                       " << std::endl;
     std::cout
             << "               ____        __  __      ____       ____                __    __  _____       __         _____        "
@@ -96,7 +99,7 @@ public:
     DefRequestMapping(SegmentTest);
 
 private:
-    std::shared_ptr<YOLOv8SegInstance> Seg_Instance_;
+    std::shared_ptr<YOLOv8DetInstance> Det_Instance_;
 };
 
 Json::Value LogicalController::HelloHttpServer(const Json::Value &param) {
@@ -109,10 +112,10 @@ Json::Value LogicalController::HelloHttpServer(const Json::Value &param) {
 }
 
 Json::Value LogicalController::SegmentTest(const Json::Value &param) {
-    cv::Mat image = cv::imread("../workspace/images/echarger.jpg");
+    cv::Mat image = cv::imread("/home/zwy/PyWorkspace/eCharger/TRT_YOLOv8_Server/workspace/images/car.jpg");
     YOLOv8Seg::BoxSeg boxarray;
 
-    if (!this->Seg_Instance_->inference(image, boxarray))
+    if (!this->Det_Instance_->inference(image, boxarray))
         return failure("Server error1");
 
     Json::Value boxarray_json(Json::arrayValue);
@@ -124,20 +127,21 @@ Json::Value LogicalController::SegmentTest(const Json::Value &param) {
         item["bottom"] = box.bottom;
         item["confidence"] = box.confidence;
         item["class_label"] = box.class_label;
-        item["class_name"] = echargerlabels[box.class_label];
+        item["class_name"] = coco_labels[box.class_label];
         boxarray_json.append(item);
     }
     return success(boxarray_json);
 }
 
 bool LogicalController::startup() {
-    std::string onnx = "../workspace/model/echarger-v8x.transd.onnx";
-    std::string engine = "../workspace/model/echarger-v8x.transd.engine";
-    Seg_Instance_ = std::make_shared<YOLOv8SegInstance>(onnx, engine);
-    if (!Seg_Instance_->startup()) {
-        Seg_Instance_.reset();
+    std::string onnx = "../workspace/model/yolov8n.transd.onnx";
+    std::string engine = "../workspace/model/yolov8n.transd.engine";
+    Det_Instance_ = std::make_shared<YOLOv8DetInstance>(onnx, engine);
+    if (!Det_Instance_->startup())
+    {
+        Det_Instance_.reset();
     }
-    return Seg_Instance_ != nullptr;
+    return Det_Instance_ != nullptr;
 }
 
 int test_http(int port = 8090) {

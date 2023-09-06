@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-11 19:01:45
  * @LastEditors: zwy
- * @LastEditTime: 2023-07-16 16:01:06
+ * @LastEditTime: 2023-09-06 13:55:05
  */
 
 #include <vector>
@@ -17,7 +17,7 @@ std::vector<cv::Scalar> echargercolors = {
     {220, 20, 60}, // Crimson
 };
 
-static const char *cocolabels[] = {
+static const char *coco_labels[] = {
     "person", "bicycle", "car", "motorcycle", "airplane",
     "bus", "train", "truck", "boat", "traffic light", "fire hydrant",
     "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse",
@@ -32,7 +32,7 @@ static const char *cocolabels[] = {
     "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
     "scissors", "teddy bear", "hair drier", "toothbrush"};
 
-std::vector<cv::Scalar> colors = {
+std::vector<cv::Scalar> coco_colors = {
     {0, 0, 255},     // Red
     {0, 255, 0},     // Green
     {255, 0, 0},     // Bule
