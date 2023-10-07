@@ -5,7 +5,7 @@
 #include <cublas_v2.h>
 #include <NvInfer.h>
 #include <NvInferPlugin.h>
-//#include <NvCaffeParser.h>
+// #include <NvCaffeParser.h>
 
 #include <string>
 #include <vector>
@@ -16,7 +16,6 @@
 
 #include "common/cuda_tools.cuh"
 #include "onnx_parser/NvOnnxParser.h"
-
 
 using namespace nvinfer1;
 using namespace std;
@@ -344,7 +343,7 @@ namespace TRT
     {
         g_layerhook_func_reshape = func;
     }
-    
+
     void set_layer_hook_reshape(const LayerHookFuncReshape &func)
     {
         register_layerhook_reshape(func);
@@ -425,18 +424,20 @@ namespace TRT
     class Int8EntropyCalibrator : public IInt8EntropyCalibrator2
     {
     public:
+        // 从图像文件创建 Int8EntropyCalibrator 的构造函数
         Int8EntropyCalibrator(const vector<string> &imagefiles, nvinfer1::Dims dims, const Int8Process &preprocess)
         {
 
-            Assert(preprocess != nullptr);
+            Assert(preprocess != nullptr); // 断言确保预处理函数不为空
             this->dims_ = dims;
             this->allimgs_ = imagefiles;
             this->preprocess_ = preprocess;
             this->fromCalibratorData_ = false;
-            files_.resize(dims.d[0]);
+            files_.resize(dims.d[0]); // 为文件名容器分配空间
             checkCudaRuntime(cudaStreamCreate(&stream_));
         }
 
+        // 从已有数据创建 Int8EntropyCalibrator 的构造函数
         Int8EntropyCalibrator(const vector<uint8_t> &entropyCalibratorData, nvinfer1::Dims dims, const Int8Process &preprocess)
         {
             Assert(preprocess != nullptr);
@@ -470,15 +471,16 @@ namespace TRT
 
             if (!tensor_)
             {
+                // 如果尚未初始化 Tensor，创建一个新的 Tensor 对象
                 tensor_.reset(new Tensor(dims_.nbDims, dims_.d));
                 tensor_->set_stream(stream_);
                 tensor_->set_workspace(make_shared<TRT::MixMemory>());
             }
-
+            // 调用数据预处理函数
             preprocess_(cursor_, allimgs_.size(), files_, tensor_);
             return true;
         }
-
+        // 获取数据批次并绑定到输入绑定数组
         bool getBatch(void *bindings[], const char *names[], int nbBindings) noexcept
         {
             if (!next())
@@ -486,52 +488,55 @@ namespace TRT
             bindings[0] = tensor_->gpu();
             return true;
         }
-
+        // 获取已有的量化数据
         const vector<uint8_t> &getEntropyCalibratorData()
         {
             return entropyCalibratorData_;
         }
 
+        // 读取量化数据的缓存
         const void *readCalibrationCache(size_t &length) noexcept
         {
             if (fromCalibratorData_)
             {
+                // 如果数据来自已有的缓存，返回缓存数据的指针和长度
                 length = this->entropyCalibratorData_.size();
                 return this->entropyCalibratorData_.data();
             }
-
+            // 否则，返回 nullptr 和长度为 0
             length = 0;
             return nullptr;
         }
 
+        // 将当前的量化数据缓存到 entropyCalibratorData_ 中
         virtual void writeCalibrationCache(const void *cache, size_t length) noexcept
         {
             entropyCalibratorData_.assign((uint8_t *)cache, (uint8_t *)cache + length);
         }
 
     private:
-        Int8Process preprocess_;
-        vector<string> allimgs_;
-        size_t batchCudaSize_ = 0;
-        int cursor_ = 0;
-        nvinfer1::Dims dims_;
-        vector<string> files_;
-        shared_ptr<Tensor> tensor_;
-        vector<uint8_t> entropyCalibratorData_;
-        bool fromCalibratorData_ = false;
-        CUStream stream_ = nullptr;
+        Int8Process preprocess_;                // 数据预处理函数
+        vector<string> allimgs_;                // 所有的图像文件名
+        size_t batchCudaSize_ = 0;              // 数据批次的 CUDA 大小
+        int cursor_ = 0;                        // 游标，用于跟踪当前读取的数据位置
+        nvinfer1::Dims dims_;                   // 数据的维度信息
+        vector<string> files_;                  // 存储文件名的容器
+        shared_ptr<Tensor> tensor_;             // 存储数据的 Tensor 对象
+        vector<uint8_t> entropyCalibratorData_; // 存储已有的量化数据
+        bool fromCalibratorData_ = false;       // 标志位，指示数据是来自文件还是已有的数据
+        CUStream stream_ = nullptr;             // CUDA 流，用于 GPU 相关的操作
     };
 
     bool compile(
-        Mode mode,
-        unsigned int maxBatchSize,
-        const ModelSource &source,
-        const CompileOutput &saveto,
-        std::vector<InputDims> inputsDimsSetup,
-        Int8Process int8process,
-        const std::string &int8ImageDirectory,
-        const std::string &int8EntropyCalibratorFile,
-        const size_t maxWorkspaceSize)
+        Mode mode,                                    // 推理模式，可以是 FP32、FP16 或 INT8
+        unsigned int maxBatchSize,                    // 最大批处理大小
+        const ModelSource &source,                    // 模型来源，可以是 ONNX 文件或 ONNX 数据
+        const CompileOutput &saveto,                  // 编译后的输出，可以是文件或内存
+        std::vector<InputDims> inputsDimsSetup,       // 输入维度设置
+        Int8Process int8process,                      // INT8 模式下的量化处理函数
+        const std::string &int8ImageDirectory,        // INT8 模式下的图像文件目录
+        const std::string &int8EntropyCalibratorFile, // INT8 模式下的量化数据缓存文件
+        const size_t maxWorkspaceSize)                // 最大工作区大小
     {
 
         if (mode == Mode::INT8 && int8process == nullptr)

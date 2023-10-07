@@ -67,7 +67,7 @@ namespace TRT
     void MixMemory::reference_data(void *cpu, size_t cpu_size, void *gpu, size_t gpu_size)
     {
         release_all();
-
+        // 如果其中一个指针为 nullptr 或大小为 0，那么对应的指针和大小都被设置为 nullptr 和 0。
         if (cpu == nullptr || cpu_size == 0)
         {
             cpu = nullptr;

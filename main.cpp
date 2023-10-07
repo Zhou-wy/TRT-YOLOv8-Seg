@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-11 17:47:19
  * @LastEditors: zwy
- * @LastEditTime: 2023-08-06 16:16:09
+ * @LastEditTime: 2023-10-07 15:09:52
  */
 
 #include "src/HttpServer/http_server.hpp"
@@ -20,7 +20,7 @@
 #include <atomic>
 
 #include "src/TrtLib/common/ilogger.hpp"
-#include "src/TrtLib/builder/trt_builder.hpp"
+#include "src/TrtLib/common/trt_tensor.hpp"
 #include "src/YOLOv8Seg/yolov8_seg.hpp"
 #include "src/VideoPusher/rtsp2flv.hpp"
 
@@ -395,7 +395,7 @@ void SegInference(std::shared_ptr<YOLOv8SegInstance> seg, std::string in_video_u
                 cv::resize(src_image, dst_image, cv::Size(640, int((640.0 / src_image.cols) * src_image.rows)));
                 seg->inference(dst_image, boxarray);
                 show_result(dst_image, boxarray, src_image.cols, src_image.rows);
-  
+
                 // 加锁队列
                 std::unique_lock<std::mutex> lock(mtx);
                 // 队列满，等待消费者消费

@@ -43,6 +43,13 @@ namespace TRT
     const char *data_head_string(DataHead dh);
     const char *data_type_string(DataType dt);
 
+    /**
+     * @brief MixMemory 类表示混合内存，它可以在CPU和GPU之间共享数据。该类有以下主要功能：
+     * 分配和释放CPU和GPU内存。
+     * 提供访问CPU和GPU内存的方法。
+     * 跟踪内存的所有权。
+     * 可以引用外部数据。
+     */
     class MixMemory
     {
     public:

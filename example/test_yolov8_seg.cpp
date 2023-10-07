@@ -4,7 +4,7 @@
  * @Author: zwy
  * @Date: 2023-07-06 10:57:10
  * @LastEditors: zwy
- * @LastEditTime: 2023-09-06 14:02:38
+ * @LastEditTime: 2023-10-07 14:25:11
  */
 
 #include <string>
@@ -23,13 +23,32 @@ private:
 
     std::shared_ptr<YOLOv8Seg::SegInfer> get_infer(YOLOv8Seg::Task task)
     {
+        INFO("===================== test YOLOv8 int8 ==================================");
+        auto int8process = [=](int current, int count, const std::vector<std::string> &files, std::shared_ptr<TRT::Tensor> &tensor)
+        {
+            INFO("Int8 %d / %d", current, count);
+
+            for (int i = 0; i < files.size(); ++i)
+            {
+                auto image = cv::imread(files[i]);
+                cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
+                cv::resize(image, image, cv::Size(tensor->size(3), tensor->size(2)));
+                image.convertTo(image, CV_32F, 1 / 255.0f);
+                tensor->set_mat(i, image);
+            }
+        };
+
         if (!iLogger::exists(m_engine_file))
         {
             TRT::compile(
-                TRT::Mode::FP32,
+                TRT::Mode::INT8,
                 10,
                 m_onnx_file,
-                m_engine_file);
+                m_engine_file,
+                {},
+                int8process,
+                "/home/zwy/PyWorkspace/eCharger/TRT_YOLOv8_Server/workspace/media",
+                "/home/zwy/PyWorkspace/eCharger/TRT_YOLOv8_Server/workspace/media/calibration.cache");
         }
         else
         {
@@ -136,7 +155,7 @@ int main(int argc, char const *argv[])
 {
 
     std::string onnx = "../workspace/model/yolov8n.transd.onnx";
-    std::string engine = "../workspace/model/yolov8n.transd.engine";
+    std::string engine = "../workspace/model/yolov8n.transd.int8.engine";
     cv::Mat image = cv::imread("../workspace/images/car.jpg");
 
     iLogger::set_log_level(iLogger::LogLevel::Info);
@@ -156,6 +175,6 @@ int main(int argc, char const *argv[])
         std::cout <<"["<< box.left << "," << box.top << "," << box.right << "," << box.bottom << "]" << box.class_label << " " << box.confidence << std::endl;
     }
 
-    cv::imwrite("../workspace/images/car_result_det.jpg", image);
+    cv::imwrite("../workspace/images/car_result_det_INT8.jpg", image);
     return 0;
 }
