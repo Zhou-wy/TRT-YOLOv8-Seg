@@ -1,6 +1,7 @@
 workspace/images/*
 workspace/log/*
 workspace/model/*
+workspace/media/*
 build/*
 bin/*
 *.onnx
